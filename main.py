@@ -11,6 +11,11 @@ intents.members = True
 # client = discord.Client(intents=intents)
 client = commands.Bot(command_prefix='!', intents=intents)
 
+
+music_queue = {}
+
+
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user} (ID: {client.user.id})')
@@ -76,6 +81,13 @@ async def disconnect(ctx):
     else:
         await ctx.send("I am not connected to a voice channel.")
 
+def check_queue(ctx, id):
+    if id in music_queue and music_queue[id]:
+        source = music_queue[id].pop(0)
+        ctx.voice_client.play(source, after=lambda e: check_queue(ctx, id))
+        return True
+    return False
+
 
 @client.command(pass_context=True)
 async def play(ctx, url: str):
@@ -96,7 +108,7 @@ async def play(ctx, url: str):
         await ctx.send(f"File {url} does not exist. Please provide a valid URL or ensure the file is downloaded.")
         return
     source = FFmpegPCMAudio(url, executable=r"C:\FFmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe")
-    ctx.voice_client.play(source)
+    ctx.voice_client.play(source, after=lambda e=None: check_queue(ctx, ctx.guild.id))
     await ctx.send(f"Now playing: {url}")
         
 @client.command(pass_context=True)
@@ -123,6 +135,34 @@ async def stop(ctx):
     else:
         await ctx.send("I am not playing any music.")
 
+
+
+
+@client.command(pass_context=True)
+async def queue(ctx, url: str):
+    if not url.endswith('.mp3'):
+        url = url+".mp3"  # Ensure the URL ends with .mp3
+    if not os.path.exists(url):
+        await ctx.send(f"File {url} does not exist. Please provide a valid URL or ensure the file is downloaded.")
+        return
+    source = FFmpegPCMAudio(url, executable=r"C:\FFmpeg\ffmpeg-master-latest-win64-gpl-shared\bin\ffmpeg.exe")
+    guild_id = ctx.guild.id
+    if guild_id not in music_queue:
+        music_queue[guild_id] = []
+    music_queue[guild_id].append(source)
+    await ctx.send(f"Added {url} to the queue. Current queue length: {len(music_queue[guild_id])}")
+
+
+@client.command(pass_context=True)
+async def next(ctx):
+    guild_id = ctx.guild.id
+    if guild_id in music_queue and music_queue[guild_id]:
+        if ctx.voice_client and ctx.voice_client.is_playing():
+            ctx.voice_client.stop()
+        if check_queue(ctx, guild_id):
+            await ctx.send("Playing next song in the queue.")
+        else:
+            await ctx.send("No more songs in the queue.")
 
 if __name__ == "__main__":
     print("Starting the bot...")
